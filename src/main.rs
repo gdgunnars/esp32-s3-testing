@@ -23,11 +23,22 @@ fn main() {
     let channel = peripherals.rmt.channel0;
     let mut ws2812 = Ws2812Esp32Rmt::new(channel, led_pin).unwrap();
 
-    println!("Start NeoPixel rainbow!");
+    // -----------------------------------------------
+
+    // Setup LED strip channel
+    let led_pin_strip = peripherals.pins.gpio10;
+    let channel2 = peripherals.rmt.channel2;
+    let mut ws2812_strip = Ws2812Esp32Rmt::new(channel2, led_pin_strip).unwrap();
+
+    // Set base hue that will update each iteration
     let mut hue = unsafe { esp_random() } as u8;
+    println!("Start NeoPixel rainbow!");
     loop {
-        let rainbow = rainbow_flow(hue, 5);
+        let rainbow = rainbow_flow(hue, 1);
+        let rainbow_strip = rainbow_flow(hue, 5);
+
         ws2812.write(rainbow).unwrap();
+        ws2812_strip.write(rainbow_strip).unwrap();
 
         hue = hue.wrapping_add(4);
 
