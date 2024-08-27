@@ -38,7 +38,7 @@ fn main() {
 fn rainbow_flow(starting_hue: u8, pixel_count: usize) -> impl Iterator<Item = RGB8> {
     let mut hue = starting_hue;
 
-    let pixels = std::iter::repeat_with(move || {
+    std::iter::repeat_with(move || {
         let current_hue = hue;
 
         hue = hue.wrapping_add(32); // Increment hue by 32 for the next decided color (0-255)
@@ -49,7 +49,5 @@ fn rainbow_flow(starting_hue: u8, pixel_count: usize) -> impl Iterator<Item = RG
             val: 8,
         })
     })
-    .take(pixel_count);
-
-    return pixels;
+    .take(pixel_count)
 }
