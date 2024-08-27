@@ -1,4 +1,8 @@
+mod wifi;
+
+use anyhow::{Error, Result};
 use esp_idf_svc::{
+    eventloop::EspSystemEventLoop,
     hal::{delay::FreeRtos, prelude::Peripherals},
     sys::esp_random,
 };
@@ -8,7 +12,10 @@ use smart_leds::{
 };
 use ws2812_esp32_rmt_driver::Ws2812Esp32Rmt;
 
-fn main() {
+const SSID: &str = env!("WIFI_SSID");
+const PASSWORD: &str = env!("WIFI_PASS");
+
+fn main() -> Result<(), Error> {
     // It is necessary to call this function once. Otherwise some patches to the runtime
     // implemented by esp-idf-sys might not link properly. See https://github.com/esp-rs/esp-idf-template/issues/71
     esp_idf_svc::sys::link_patches();
@@ -16,19 +23,27 @@ fn main() {
     // Bind the log crate to the ESP Logging facilities
     esp_idf_svc::log::EspLogger::initialize_default();
     // -----------------------------------------------
+    // Setup
     let peripherals = Peripherals::take().unwrap();
+
+    // Connect to the Wi-Fi network
+    if SSID.contains("CHANGE_ME") || PASSWORD.contains("CHANGE_ME") {
+        panic!("Please set your Wi-Fi credentials in config.toml");
+    }
+    let sysloop = EspSystemEventLoop::take()?;
+    let _wifi = wifi::wifi(SSID, PASSWORD, peripherals.modem, sysloop)?;
 
     // Configure onboard LED
     let led_pin = peripherals.pins.gpio21;
     let channel = peripherals.rmt.channel0;
-    let mut ws2812 = Ws2812Esp32Rmt::new(channel, led_pin).unwrap();
+    let mut ws2812 = Ws2812Esp32Rmt::new(channel, led_pin)?;
 
     // -----------------------------------------------
 
     // Setup LED strip channel
     let led_pin_strip = peripherals.pins.gpio10;
     let channel2 = peripherals.rmt.channel2;
-    let mut ws2812_strip = Ws2812Esp32Rmt::new(channel2, led_pin_strip).unwrap();
+    let mut ws2812_strip = Ws2812Esp32Rmt::new(channel2, led_pin_strip)?;
 
     // Set base hue that will update each iteration
     let mut hue = unsafe { esp_random() } as u8;
@@ -37,8 +52,8 @@ fn main() {
         let rainbow = rainbow_flow(hue, 1);
         let rainbow_strip = rainbow_flow(hue, 5);
 
-        ws2812.write(rainbow).unwrap();
-        ws2812_strip.write(rainbow_strip).unwrap();
+        ws2812.write(rainbow)?;
+        ws2812_strip.write(rainbow_strip)?;
 
         hue = hue.wrapping_add(4);
 
