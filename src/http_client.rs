@@ -15,7 +15,7 @@ pub fn get(url: impl AsRef<str>) -> Result<String, Error> {
         ..Default::default()
     };
 
-    let mut client = HttpClient::wrap(EspHttpConnection::new(&config)?);
+    let mut client = HttpClient::wrap(EspHttpConnection::new(config)?);
     let headers = [("accept", "application/json")];
 
     let request = client.request(Method::Get, url.as_ref(), &headers)?;
@@ -25,7 +25,7 @@ pub fn get(url: impl AsRef<str>) -> Result<String, Error> {
         200..=299 => {
             info!("Success!");
             match parse_response(&mut response) {
-                Ok(body) => return Ok(body),
+                Ok(body) => Ok(body),
                 Err(e) => {
                     error!("Failed!");
                     bail!(e);
@@ -36,7 +36,7 @@ pub fn get(url: impl AsRef<str>) -> Result<String, Error> {
             error!("Failed!");
             bail!("Response not 200");
         }
-    };
+    }
 }
 
 fn parse_response(response: &mut HttpResponse<&mut EspHttpConnection>) -> Result<String, Error> {
@@ -50,11 +50,11 @@ fn parse_response(response: &mut HttpResponse<&mut EspHttpConnection>) -> Result
                 buf.len(),
                 body_string
             );
-            return Ok(body_string.to_string());
+            Ok(body_string.to_string())
         }
         Err(e) => {
             error!("Error decoding response body: {}", e);
             bail!("Error parsing response body");
         }
-    };
+    }
 }

@@ -6,11 +6,19 @@ use esp_idf_svc::{
     eventloop::EspSystemEventLoop,
     hal::{delay::FreeRtos, prelude::Peripherals},
     sys::esp_random,
+    timer::EspTaskTimerService,
 };
 use log::{error, info};
 use smart_leds::{
     hsv::{hsv2rgb, Hsv},
     SmartLedsWrite, RGB8,
+};
+use std::{
+    sync::{
+        atomic::{AtomicU32, Ordering},
+        Arc,
+    },
+    time::Duration,
 };
 use ws2812_esp32_rmt_driver::Ws2812Esp32Rmt;
 
@@ -58,6 +66,22 @@ fn main() -> Result<(), Error> {
             ws2812.write(COLOR_FAILURE)?;
         }
     };
+
+    // -----------------------------------------------
+    // Bump the counter every 10 seconds;
+    let counter = Arc::new(AtomicU32::new(0));
+
+    let timer_service = EspTaskTimerService::new()?;
+    let callback_timer = {
+        let counter = counter.clone();
+        timer_service.timer(move || {
+            let current = counter.fetch_add(1, Ordering::SeqCst);
+
+            info!("Callback timer reports tick: {}", current);
+        })?
+    };
+
+    callback_timer.every(Duration::from_secs(10))?;
 
     // -----------------------------------------------
 
