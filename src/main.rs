@@ -13,13 +13,7 @@ use smart_leds::{
     hsv::{hsv2rgb, Hsv},
     SmartLedsWrite, RGB8,
 };
-use std::{
-    sync::{
-        atomic::{AtomicU32, Ordering},
-        Arc,
-    },
-    time::Duration,
-};
+use std::time::Duration;
 use ws2812_esp32_rmt_driver::Ws2812Esp32Rmt;
 
 const COLOR_FAILURE: [RGB8; 1] = [RGB8 { g: 32, r: 00, b: 0 }];
@@ -52,36 +46,27 @@ fn main() -> Result<(), Error> {
     let mut ws2812 = Ws2812Esp32Rmt::new(channel, led_pin)?;
 
     // -----------------------------------------------
-    // Test url (open currency exchange rate)
-    let url =
-        "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/dkk.json";
-    match http_client::get(url) {
-        Ok(_) => {
-            info!("HttpClientSuccess!");
-            ws2812.write(COLOR_RUNNING)?;
-        }
-        Err(e) => {
-            error!("################ Caught the HttpClient failure: {:?}", e);
-            // Setting onboard LED to red as we couldn't fetch data from the URL;
-            ws2812.write(COLOR_FAILURE)?;
-        }
-    };
+    // Call API every 30 seconds
 
-    // -----------------------------------------------
-    // Bump the counter every 10 seconds;
-    let counter = Arc::new(AtomicU32::new(0));
-
-    let timer_service = EspTaskTimerService::new()?;
-    let callback_timer = {
-        let counter = counter.clone();
-        timer_service.timer(move || {
-            let current = counter.fetch_add(1, Ordering::SeqCst);
-
-            info!("Callback timer reports tick: {}", current);
+    let api_timer_service = EspTaskTimerService::new()?;
+    let api_callback_timer = {
+        api_timer_service.timer(move || {
+            let url = "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/dkk.json";
+            match http_client::get(url) {
+                Ok(_) => {
+                    info!("HttpClientSuccess!");
+                    ws2812.write(COLOR_RUNNING).unwrap();
+                }
+                Err(e) => {
+                    error!("-> Caught the HttpClient failure: {:?}", e);
+                    // Setting onboard LED to red as we couldn't fetch data from the URL;
+                    ws2812.write(COLOR_FAILURE).unwrap();
+                }
+            };
         })?
     };
 
-    callback_timer.every(Duration::from_secs(10))?;
+    api_callback_timer.every(Duration::from_secs(30))?;
 
     // -----------------------------------------------
 
