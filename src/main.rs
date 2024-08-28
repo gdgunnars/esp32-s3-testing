@@ -1,3 +1,4 @@
+mod http_client;
 mod wifi;
 
 use anyhow::{Error, Result};
@@ -6,11 +7,15 @@ use esp_idf_svc::{
     hal::{delay::FreeRtos, prelude::Peripherals},
     sys::esp_random,
 };
+use log::{error, info};
 use smart_leds::{
     hsv::{hsv2rgb, Hsv},
     SmartLedsWrite, RGB8,
 };
 use ws2812_esp32_rmt_driver::Ws2812Esp32Rmt;
+
+const COLOR_FAILURE: [RGB8; 1] = [RGB8 { g: 32, r: 00, b: 0 }];
+const COLOR_RUNNING: [RGB8; 1] = [RGB8 { g: 0, r: 32, b: 32 }];
 
 const SSID: &str = env!("WIFI_SSID");
 const PASSWORD: &str = env!("WIFI_PASS");
@@ -39,6 +44,22 @@ fn main() -> Result<(), Error> {
     let mut ws2812 = Ws2812Esp32Rmt::new(channel, led_pin)?;
 
     // -----------------------------------------------
+    // Test url (open currency exchange rate)
+    let url =
+        "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/dkk.json";
+    match http_client::get(url) {
+        Ok(_) => {
+            info!("HttpClientSuccess!");
+            ws2812.write(COLOR_RUNNING)?;
+        }
+        Err(e) => {
+            error!("################ Caught the HttpClient failure: {:?}", e);
+            // Setting onboard LED to red as we couldn't fetch data from the URL;
+            ws2812.write(COLOR_FAILURE)?;
+        }
+    };
+
+    // -----------------------------------------------
 
     // Setup LED strip channel
     let led_pin_strip = peripherals.pins.gpio10;
@@ -49,11 +70,9 @@ fn main() -> Result<(), Error> {
     let mut hue = unsafe { esp_random() } as u8;
     println!("Start NeoPixel rainbow!");
     loop {
-        let rainbow = rainbow_flow(hue, 1);
-        let rainbow_strip = rainbow_flow(hue, 5);
+        let rainbow = rainbow_flow(hue, 5);
 
-        ws2812.write(rainbow)?;
-        ws2812_strip.write(rainbow_strip)?;
+        ws2812_strip.write(rainbow)?;
 
         hue = hue.wrapping_add(4);
 
