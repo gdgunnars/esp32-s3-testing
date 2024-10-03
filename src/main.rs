@@ -1,26 +1,33 @@
 mod http_client;
+mod led_state;
 mod wifi;
 
 use anyhow::{Error, Result};
 use esp_idf_svc::{
     eventloop::EspSystemEventLoop,
     hal::{delay::FreeRtos, prelude::Peripherals},
-    sys::esp_random,
     timer::EspTaskTimerService,
 };
+use led_state::{AtomicLedState, LedState};
 use log::{error, info};
 use smart_leds::{
+    brightness, colors,
     hsv::{hsv2rgb, Hsv},
     SmartLedsWrite, RGB8,
 };
-use std::time::Duration;
+use std::{
+    sync::{atomic::Ordering, OnceLock},
+    time::Duration,
+};
 use ws2812_esp32_rmt_driver::Ws2812Esp32Rmt;
 
-const COLOR_FAILURE: [RGB8; 1] = [RGB8 { g: 32, r: 00, b: 0 }];
-const COLOR_RUNNING: [RGB8; 1] = [RGB8 { g: 0, r: 32, b: 32 }];
+const LED_COUNT: usize = 5;
 
 const SSID: &str = env!("WIFI_SSID");
 const PASSWORD: &str = env!("WIFI_PASS");
+
+// Use OnceLock to lazily initialize AtomicLedState safely in a multithreaded context
+static LED_STATE: OnceLock<AtomicLedState> = OnceLock::new();
 
 fn main() -> Result<(), Error> {
     // It is necessary to call this function once. Otherwise some patches to the runtime
@@ -31,6 +38,10 @@ fn main() -> Result<(), Error> {
     esp_idf_svc::log::EspLogger::initialize_default();
     // -----------------------------------------------
     // Setup
+
+    // Lazily initialize the LED_STATE with an initial value (e.g., LedState::CLEAR)
+    LED_STATE.get_or_init(|| AtomicLedState::new(LedState::CLEAR));
+
     let peripherals = Peripherals::take().unwrap();
 
     // Connect to the Wi-Fi network
@@ -55,12 +66,12 @@ fn main() -> Result<(), Error> {
             match http_client::get(url) {
                 Ok(_) => {
                     info!("HttpClientSuccess!");
-                    ws2812.write(COLOR_RUNNING).unwrap();
+                    ws2812.write(solid_color(colors::AQUA, 50)).unwrap();
                 }
                 Err(e) => {
                     error!("-> Caught the HttpClient failure: {:?}", e);
                     // Setting onboard LED to red as we couldn't fetch data from the URL;
-                    ws2812.write(COLOR_FAILURE).unwrap();
+                    ws2812.write(solid_color(colors::RED, 50)).unwrap();
                 }
             };
         })?
@@ -69,27 +80,59 @@ fn main() -> Result<(), Error> {
     api_callback_timer.every(Duration::from_secs(30))?;
 
     // -----------------------------------------------
+    // Change LED state every 10 seconds for testing
+
+    let color_change_timer_service = EspTaskTimerService::new()?;
+    let color_change_timer = {
+        color_change_timer_service.timer(move || {
+            LED_STATE.get().unwrap().increment(Ordering::SeqCst);
+            let new_state = LED_STATE.get().unwrap().load(Ordering::SeqCst);
+            log::info!("LED state changed: {:?}", new_state); // Log the new state
+        })?
+    };
+
+    color_change_timer.every(Duration::from_secs(10))?;
+
+    // -----------------------------------------------
 
     // Setup LED strip channel
     let led_pin_strip = peripherals.pins.gpio10;
     let channel2 = peripherals.rmt.channel2;
     let mut ws2812_strip = Ws2812Esp32Rmt::new(channel2, led_pin_strip)?;
 
-    // Set base hue that will update each iteration
-    let mut hue = unsafe { esp_random() } as u8;
-    println!("Start NeoPixel rainbow!");
+    // Set base hue that will update if party state is active
+    let mut hue: u8 = 0;
+    println!("Setup finished, State matching started!");
+
     loop {
-        let rainbow = rainbow_flow(hue, 5);
+        // Load the atomic value and convert it to the enum
+        let state = LED_STATE.get().unwrap().load(Ordering::Relaxed);
 
-        ws2812_strip.write(rainbow)?;
+        let led_colors = get_led_strip_colors(state, &mut hue);
 
-        hue = hue.wrapping_add(4);
+        if let Err(e) = ws2812_strip.write(led_colors) {
+            log::error!("Failed to update LED strip: {:?}", e);
+        }
 
         FreeRtos::delay_ms(50);
     }
+    // Ok(())
 }
 
-fn rainbow_flow(starting_hue: u8, pixel_count: usize) -> impl Iterator<Item = RGB8> {
+fn get_led_strip_colors(state: LedState, hue: &mut u8) -> Box<dyn Iterator<Item = RGB8>> {
+    match state {
+        LedState::INIT => Box::new(solid_color(colors::WHITE, 50)),
+        LedState::PARTY => {
+            *hue = hue.wrapping_add(4);
+            Box::new(rainbow_flow(*hue))
+        }
+        LedState::CLEAR => Box::new(solid_color(colors::WHITE, 50)),
+        LedState::ERROR => Box::new(solid_color(colors::RED, 50)),
+        LedState::WARNING => Box::new(solid_color(colors::YELLOW, 50)),
+    }
+}
+
+fn rainbow_flow(starting_hue: u8) -> impl Iterator<Item = RGB8> {
     let mut hue = starting_hue;
 
     std::iter::repeat_with(move || {
@@ -103,5 +146,9 @@ fn rainbow_flow(starting_hue: u8, pixel_count: usize) -> impl Iterator<Item = RG
             val: 8,
         })
     })
-    .take(pixel_count)
+    .take(LED_COUNT)
+}
+
+fn solid_color(color: RGB8, level: u8) -> impl Iterator<Item = RGB8> {
+    brightness(std::iter::repeat(color).take(LED_COUNT), level)
 }
