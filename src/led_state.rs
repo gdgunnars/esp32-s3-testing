@@ -2,21 +2,21 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(Copy, Clone, Debug)]
 pub enum LedState {
-    INIT = 0,
-    PARTY = 1,
-    CLEAR = 2,
-    ERROR = 3,
-    WARNING = 4,
+    Init = 0,
+    Party = 1,
+    Clear = 2,
+    Error = 3,
+    Warning = 4,
 }
 
 impl LedState {
     fn from_usize(value: usize) -> Self {
         match value {
-            0 => LedState::INIT,
-            1 => LedState::PARTY,
-            2 => LedState::CLEAR,
-            3 => LedState::ERROR,
-            4 => LedState::WARNING,
+            0 => LedState::Init,
+            1 => LedState::Party,
+            2 => LedState::Clear,
+            3 => LedState::Error,
+            4 => LedState::Warning,
             _ => panic!("Invalid value for LedState"),
         }
     }
@@ -49,8 +49,8 @@ impl AtomicLedState {
     // Used for testing the atomic state
     pub fn increment(&self, ordering: Ordering) {
         let next_state = self.load(ordering) as usize + 1;
-        if next_state > LedState::WARNING as usize {
-            self.store(LedState::INIT, ordering);
+        if next_state > LedState::Warning as usize {
+            self.store(LedState::Init, ordering);
         } else {
             self.store(LedState::from_usize(next_state), ordering);
         }

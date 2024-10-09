@@ -61,28 +61,27 @@ where
                 log::error!("Failed to update LED strip: {:?}", e);
             }
 
-            FreeRtos::delay_ms(50); // Delay to limit the loop frequency
+            FreeRtos::delay_ms(25); // Delay to limit the loop frequency
         }
     }
 
     fn get_led_strip_colors(&mut self, state: LedState) -> Box<dyn Iterator<Item = RGB8>> {
         match state {
-            LedState::INIT => {
-                self.brightness = self.brightness.wrapping_add(4);
+            LedState::Init => {
+                self.brightness = self.brightness.wrapping_add(2);
                 Box::new(breathing_effect(colors::WHITE, self.brightness))
             } // Breathing effect
-            LedState::PARTY => {
-                self.hue = self.hue.wrapping_add(4);
+            LedState::Party => {
+                self.hue = self.hue.wrapping_add(2);
                 Box::new(rainbow_flow(self.hue))
             }
-            LedState::CLEAR => Box::new(solid_color(colors::WHITE, 50)),
-            LedState::ERROR => Box::new(solid_color(colors::RED, 50)),
-            LedState::WARNING => Box::new(solid_color(colors::YELLOW, 50)),
+            LedState::Clear => Box::new(solid_color(colors::WHITE, 50)),
+            LedState::Error => Box::new(solid_color(colors::RED, 50)),
+            LedState::Warning => Box::new(solid_color(colors::YELLOW, 50)),
         }
     }
 }
 
-// Helper functions for LED colors
 fn rainbow_flow(starting_hue: u8) -> impl Iterator<Item = RGB8> {
     let mut hue = starting_hue;
 
@@ -104,7 +103,6 @@ fn solid_color(color: RGB8, level: u8) -> impl Iterator<Item = RGB8> {
     brightness(std::iter::repeat(color).take(LED_COUNT), level)
 }
 
-// Breathing effect function
 fn breathing_effect(color: RGB8, step: u8) -> impl Iterator<Item = RGB8> {
     let min_brightness = 25.0;
     let max_brightness = 255.0;
