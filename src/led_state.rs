@@ -48,11 +48,11 @@ impl AtomicLedState {
     // Increment the state, wrapping if necessary
     // Used for testing the atomic state
     pub fn increment(&self, ordering: Ordering) {
-        let current_state = self.load(ordering) as usize + 1;
-        if current_state > LedState::WARNING as usize {
-            self.store(LedState::PARTY, ordering);
+        let next_state = self.load(ordering) as usize + 1;
+        if next_state > LedState::WARNING as usize {
+            self.store(LedState::INIT, ordering);
         } else {
-            self.store(LedState::from_usize(current_state), ordering);
+            self.store(LedState::from_usize(next_state), ordering);
         }
     }
 }

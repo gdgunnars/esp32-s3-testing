@@ -1,8 +1,5 @@
 use anyhow::{bail, Error};
-use embedded_svc::{
-    http::{client::Client as HttpClient, Method},
-    utils::io,
-};
+use embedded_svc::http::{client::Client as HttpClient, Method};
 use esp_idf_svc::http::client::{
     Configuration as HttpConfiguration, EspHttpConnection, Response as HttpResponse,
 };
@@ -40,17 +37,31 @@ pub fn get(url: impl AsRef<str>) -> Result<String, Error> {
 }
 
 fn parse_response(response: &mut HttpResponse<&mut EspHttpConnection>) -> Result<String, Error> {
-    let mut buf = [0u8; 1024];
-    let bytes_read = io::try_read_full(response, &mut buf).map_err(|e| e.0)?;
-    info!("Read {} bytes", bytes_read);
-    match std::str::from_utf8(&buf[0..bytes_read]) {
+    let mut buf = Vec::new(); // A dynamic buffer allocated on the heap
+    let mut tmp_buf = [0u8; 256]; // A smaller temporary buffer for each chunk
+
+    // Read the response in chunks
+    loop {
+        // Attempt to read a chunk of data into the temporary buffer
+        match response.read(&mut tmp_buf) {
+            Ok(0) => break, // No more data to read (EOF)
+            Ok(bytes_read) => {
+                // Append the read bytes to the buffer
+                buf.extend_from_slice(&tmp_buf[..bytes_read]);
+                info!("Read {} bytes", bytes_read);
+            }
+            Err(e) => {
+                error!("Error reading response: {}", e);
+                bail!("Error reading response");
+            }
+        }
+    }
+
+    // Convert the accumulated bytes in `buf` to a UTF-8 string
+    match String::from_utf8(buf) {
         Ok(body_string) => {
-            info!(
-                "Response body (truncated to {} bytes): {:?}",
-                buf.len(),
-                body_string
-            );
-            Ok(body_string.to_string())
+            info!("Full response body: {:?}", body_string);
+            Ok(body_string)
         }
         Err(e) => {
             error!("Error decoding response body: {}", e);
